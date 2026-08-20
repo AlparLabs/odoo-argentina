@@ -54,3 +54,21 @@ def migrate(cr, version):
                 """,
                     (xml_id_name,),
                 )
+
+    # Delete the old view that contains l10n_ar_afip_activity_id to prevent ParseError during 19.0 upgrade
+    cr.execute("""
+        DELETE FROM ir_ui_view
+        WHERE id IN (
+            SELECT res_id FROM ir_model_data
+            WHERE model = 'ir.ui.view'
+            AND module = 'l10n_ar_ux'
+            AND name = 'res_config_settings_view_form'
+        )
+    """)
+    cr.execute("""
+        DELETE FROM ir_model_data
+        WHERE model = 'ir.ui.view'
+        AND module = 'l10n_ar_ux'
+        AND name = 'res_config_settings_view_form'
+    """)
+
