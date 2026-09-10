@@ -1,3 +1,4 @@
+from . import test_aliquot_source_order
 from . import test_arba
 from . import test_map_tax_fiscal_position
 from . import test_perception_base_minimum_threshold
@@ -12,5 +13,6 @@ from . import test_payment_register_pro_wizard
 from . import test_payment_withholding_kept_on_post
 from . import test_payment_form_withholding_net
 from . import test_withholding_suffered_ledger
+from . import test_rentas_cordoba_ws_errors
 from . import test_withholding_certificates_mail
 from . import test_withholding_adjustment_with_checks
