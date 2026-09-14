@@ -18,6 +18,9 @@ REMOVED_FIELDS = (
     "arba_cot",
     "arba_warning_html",
     "autofilled_check_number",
+    "autoprinted",
+    "book_id",
+    "book_required",
     "bundle_counterpart_currency_amount",
     "check_note_already_in_use",
     "check_sequence_next_number",
@@ -45,12 +48,16 @@ REMOVED_FIELDS = (
     "incl_partial",
     "interest_ids",
     "l10n_ar_afip_activity_id",
+    "lines_per_voucher",
     "lock_posted_moves",
     "manual_currency_po_inv",
+    "next_number",
+    "next_voucher_number",
     "on_sale_line_cancel_decrease_line_qty",
     "pricelist_cache_auhorize_apikey_ids",
     "purchase_auto_cancel",
     "purchase_pricelist_disable_autocreate",
+    "qty_multiple_over_max",
     "report_total_without_discount",
     "restocking_fee_product_id",
     "restrict_sale_order_line_remove",
@@ -68,7 +75,11 @@ REMOVED_FIELDS = (
     "sale_planner_order_cut_hour",
     "sale_report_print_block",
     "sale_require_commitment_date",
+    # sale_automatic_workflow lo borro en 19.0 junto con su vista de ajustes,
+    # pero OCA no dejo migracion: la vista vieja sigue en la base y rompe la
+    # validacion del arch combinado de res.config.settings.
     "sale_workflow_copy_mode",
+    "sequence_to",
     "set_sales_team_from_products",
     "settled_line_ids",
     "settlement_account_id",
@@ -78,6 +89,7 @@ REMOVED_FIELDS = (
     "show_client_order_ref_sale",
     "skip_sales_team_if_set",
     "so_line_client_ref_policy",
+    "stock_orderpoint_allow_multiple_over_max",
     "susbscriptions_backward_days",
     "tax_settlement",
     "tax_settlement_move_id",
@@ -88,12 +100,23 @@ REMOVED_FIELDS = (
     "use_oca_batch_validation",
     "use_search_filter_amount",
     "use_shipping_commercial_partner_filter",
+    "voucher_ids",
+    "voucher_number",
+    "voucher_number_unique",
+    "voucher_required",
+    "vouchers",
     "wa_fines_late_account_id",
     "wa_fines_rate",
+    "with_vouchers",
 )
 
 # Modelos eliminados en 19.0: sus vistas quedan huerfanas.
-REMOVED_MODELS = ("afip.activity",)
+REMOVED_MODELS = (
+    "afip.activity",
+    "stock.book",
+    "stock.picking.voucher",
+    "stock.valuation.layer.recompute",
+)
 
 
 def migrate(cr, version):
