@@ -15,6 +15,7 @@ _logger = logging.getLogger(__name__)
 # submodulos: campos borrados que tenian vista en v18 y ya no existen en v19.
 REMOVED_FIELDS = (
     "allow_move_with_valuation_cancelation",
+    "arba_code",
     "arba_cot",
     "arba_warning_html",
     "autofilled_check_number",
@@ -108,6 +109,7 @@ REMOVED_FIELDS = (
     "wa_fines_late_account_id",
     "wa_fines_rate",
     "with_vouchers",
+    "x_studio_first_op_payment_type",
 )
 
 # Modelos eliminados en 19.0: sus vistas quedan huerfanas.
