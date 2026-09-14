@@ -208,7 +208,7 @@ def _desinstalar_modulos_obsoletos(cr):
     cr.execute(
         """
         UPDATE ir_module_module
-           SET state = 'to upgrade'
+           SET state = 'installed', latest_version = '19.0.1.0.0'
          WHERE name IN %s
            AND state IN ('installed', 'to upgrade', 'to install')
         """,
