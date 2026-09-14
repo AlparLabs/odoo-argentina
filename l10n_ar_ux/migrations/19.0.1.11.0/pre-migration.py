@@ -27,7 +27,6 @@ REMOVED_FIELDS = (
     "check_sequence_next_number",
     "client_order_ref_in_invoice_line_desc",
     "counterpart_exchange_rate",
-    "create_new_rfq",
     "default_sn_package_column_index",
     "default_sn_product_column_index",
     "default_sn_search_product_by_field",
@@ -122,17 +121,72 @@ REMOVED_MODELS = (
 
 
 MODULES_TO_UNINSTALL = (
-    "account_hide_initial_balances",
     "account_paid_invoice_export",
     "account_tax_settlement",
-    "approvals_purchase_no_merge",
     "l10n_ar_account_tax_settlement",
     "l10n_ar_stock_adhoc",
     "l10n_ar_tax_ratio",
     "sale_automatic_workflow_stock",
-    "sale_progress_certification",
     "stock_voucher",
 )
+
+MODULES_TO_PRESERVE = (
+    "account_hide_initial_balances",
+    "approvals_purchase_no_merge",
+    "sale_progress_certification",
+)
+
+
+def _migrar_remitos_stock_voucher(cr):
+    """
+    Migra los remitos historicos de stock_voucher hacia stock_picking.l10n_ar_delivery_guide_number
+    y hace un backup permanente de la tabla stock_picking_voucher antes de cualquier limpieza.
+    """
+    cr.execute("ALTER TABLE stock_picking ADD COLUMN IF NOT EXISTS l10n_ar_delivery_guide_number VARCHAR")
+
+    cr.execute("""
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+             WHERE table_schema = 'public' 
+               AND table_name = 'stock_picking_voucher'
+        )
+    """)
+    if cr.fetchone()[0]:
+        cr.execute("""
+            CREATE TABLE IF NOT EXISTS stock_picking_voucher_backup AS 
+            SELECT * FROM stock_picking_voucher
+        """)
+        _logger.info("l10n_ar_ux pre-migration: tabla stock_picking_voucher_backup asegurada")
+
+        cr.execute("""
+            UPDATE stock_picking p
+               SET l10n_ar_delivery_guide_number = sub.remitos
+              FROM (
+                  SELECT picking_id, string_agg(name, ', ' ORDER BY id) AS remitos
+                    FROM stock_picking_voucher
+                   WHERE name IS NOT NULL AND trim(name) != ''
+                   GROUP BY picking_id
+              ) sub
+             WHERE p.id = sub.picking_id
+               AND (p.l10n_ar_delivery_guide_number IS NULL OR trim(p.l10n_ar_delivery_guide_number) = '')
+        """)
+        _logger.info("l10n_ar_ux pre-migration: %s remitos migrados desde stock_picking_voucher a l10n_ar_delivery_guide_number", cr.rowcount)
+
+    cr.execute("""
+        SELECT EXISTS (
+            SELECT FROM information_schema.columns 
+             WHERE table_name = 'stock_picking' 
+               AND column_name = 'vouchers'
+        )
+    """)
+    if cr.fetchone()[0]:
+        cr.execute("""
+            UPDATE stock_picking
+               SET l10n_ar_delivery_guide_number = vouchers
+             WHERE (l10n_ar_delivery_guide_number IS NULL OR trim(l10n_ar_delivery_guide_number) = '')
+               AND vouchers IS NOT NULL AND trim(vouchers) != ''
+        """)
+        _logger.info("l10n_ar_ux pre-migration: %s remitos migrados desde stock_picking.vouchers a l10n_ar_delivery_guide_number", cr.rowcount)
 
 
 def migrate(cr, version):
@@ -142,6 +196,7 @@ def migrate(cr, version):
     carga su modulo; revisar el log por si aparece algo de studio_customization,
     que vive solo en la base y no se regenera.
     """
+    _migrar_remitos_stock_voucher(cr)
     _desinstalar_modulos_obsoletos(cr)
     pattern = r"\y(" + "|".join(REMOVED_FIELDS) + r")\y"
 
@@ -150,6 +205,15 @@ def migrate(cr, version):
 
 
 def _desinstalar_modulos_obsoletos(cr):
+    cr.execute(
+        """
+        UPDATE ir_module_module
+           SET state = 'to upgrade'
+         WHERE name IN %s
+           AND state IN ('installed', 'to upgrade', 'to install')
+        """,
+        (MODULES_TO_PRESERVE,),
+    )
     cr.execute(
         """
         UPDATE ir_module_module
