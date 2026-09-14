@@ -249,14 +249,21 @@ def _desactivar_crons_obsoletos(cr):
                 AND module IN %s
          )
          OR ir_actions_server_id IN (
-             SELECT id FROM ir_act_server 
-              WHERE model_name IN %s
+             SELECT s.id FROM ir_act_server s
+               JOIN ir_model m ON s.model_id = m.id
+              WHERE m.model IN %s
+         )
+         OR ir_actions_server_id IN (
+             SELECT res_id FROM ir_model_data
+              WHERE model = 'ir.actions.server'
+                AND module IN %s
          )
         """,
-        (MODULES_TO_UNINSTALL, REMOVED_MODELS),
+        (MODULES_TO_UNINSTALL, REMOVED_MODELS, MODULES_TO_UNINSTALL),
     )
     if cr.rowcount:
         _logger.info("limpieza v19: %s crons obsoletos desactivados", cr.rowcount)
+
 
 
 def _limpiar_vistas(cr, pattern):
