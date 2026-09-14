@@ -121,6 +121,20 @@ REMOVED_MODELS = (
 )
 
 
+MODULES_TO_UNINSTALL = (
+    "account_hide_initial_balances",
+    "account_paid_invoice_export",
+    "account_tax_settlement",
+    "approvals_purchase_no_merge",
+    "l10n_ar_account_tax_settlement",
+    "l10n_ar_stock_adhoc",
+    "l10n_ar_tax_ratio",
+    "sale_automatic_workflow_stock",
+    "sale_progress_certification",
+    "stock_voucher",
+)
+
+
 def migrate(cr, version):
     """Limpia vistas, acciones, menus y filtros que apuntan a campos removidos en v19.
 
@@ -128,10 +142,25 @@ def migrate(cr, version):
     carga su modulo; revisar el log por si aparece algo de studio_customization,
     que vive solo en la base y no se regenera.
     """
+    _desinstalar_modulos_obsoletos(cr)
     pattern = r"\y(" + "|".join(REMOVED_FIELDS) + r")\y"
 
     _limpiar_vistas(cr, pattern)
     _limpiar_acciones(cr, pattern)
+
+
+def _desinstalar_modulos_obsoletos(cr):
+    cr.execute(
+        """
+        UPDATE ir_module_module
+           SET state = 'uninstalled'
+         WHERE name IN %s
+           AND state IN ('installed', 'to upgrade', 'to install', 'to remove')
+        """,
+        (MODULES_TO_UNINSTALL,),
+    )
+    if cr.rowcount:
+        _logger.info("limpieza v19: %s modulos obsoletos marcados como uninstalled", cr.rowcount)
 
 
 def _limpiar_vistas(cr, pattern):
