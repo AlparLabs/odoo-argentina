@@ -63,6 +63,22 @@ def migrate(cr, version):
     if cr.rowcount:
         _logger.info("l10n_ar_ux end-migration: %s modulos obsoletos asegurados como uninstalled", cr.rowcount)
 
+    cr.execute(
+        """
+        UPDATE ir_cron SET active = False
+         WHERE id IN (
+             SELECT res_id FROM ir_model_data 
+              WHERE model = 'ir.cron' 
+                AND module IN %s
+         )
+         OR ir_actions_server_id IN (
+             SELECT id FROM ir_act_server 
+              WHERE model_name IN %s
+         )
+        """,
+        (MODULES_TO_UNINSTALL, REMOVED_MODELS),
+    )
+
     # Limpieza final de vistas que pudieran referenciar all_qty_delivered o workflow_process_id
     pattern = r"\y(" + "|".join(REMOVED_FIELDS) + r")\y"
     cr.execute(
@@ -117,16 +133,3 @@ def migrate(cr, version):
             """
         )
         _logger.info("l10n_ar_ux end-migration: vistas huerfanas eliminadas")
-
-    # Limpieza de ir_model_fields e ir_model
-    cr.execute(
-        """
-        DELETE FROM ir_model_fields 
-         WHERE model IN %s
-            OR (model = 'sale.order' AND name IN ('all_qty_delivered', 'workflow_process_id'))
-            OR (model = 'account.move' AND name IN ('workflow_process_id'))
-            OR (model = 'stock.picking' AND name IN ('workflow_process_id'))
-        """,
-        (REMOVED_MODELS,),
-    )
-    cr.execute("DELETE FROM ir_model WHERE model IN %s", (REMOVED_MODELS,))

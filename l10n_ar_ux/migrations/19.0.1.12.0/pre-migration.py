@@ -208,7 +208,7 @@ def migrate(cr, version):
     """
     _migrar_remitos_stock_voucher(cr)
     _desinstalar_modulos_obsoletos(cr)
-    _limpiar_modelos_y_campos(cr)
+    _desactivar_crons_obsoletos(cr)
 
     pattern = r"\y(" + "|".join(REMOVED_FIELDS) + r")\y"
 
@@ -239,23 +239,24 @@ def _desinstalar_modulos_obsoletos(cr):
         _logger.info("limpieza v19: %s modulos obsoletos marcados como uninstalled", cr.rowcount)
 
 
-def _limpiar_modelos_y_campos(cr):
+def _desactivar_crons_obsoletos(cr):
     cr.execute(
         """
-        DELETE FROM ir_model_fields 
-         WHERE model IN %s
-            OR (model = 'sale.order' AND name IN ('all_qty_delivered', 'workflow_process_id'))
-            OR (model = 'account.move' AND name IN ('workflow_process_id'))
-            OR (model = 'stock.picking' AND name IN ('workflow_process_id'))
+        UPDATE ir_cron SET active = False
+         WHERE id IN (
+             SELECT res_id FROM ir_model_data 
+              WHERE model = 'ir.cron' 
+                AND module IN %s
+         )
+         OR ir_actions_server_id IN (
+             SELECT id FROM ir_act_server 
+              WHERE model_name IN %s
+         )
         """,
-        (REMOVED_MODELS,),
+        (MODULES_TO_UNINSTALL, REMOVED_MODELS),
     )
     if cr.rowcount:
-        _logger.info("limpieza v19: %s campos obsoletos eliminados de ir_model_fields", cr.rowcount)
-
-    cr.execute("DELETE FROM ir_model WHERE model IN %s", (REMOVED_MODELS,))
-    if cr.rowcount:
-        _logger.info("limpieza v19: %s modelos obsoletos eliminados de ir_model", cr.rowcount)
+        _logger.info("limpieza v19: %s crons obsoletos desactivados", cr.rowcount)
 
 
 def _limpiar_vistas(cr, pattern):
