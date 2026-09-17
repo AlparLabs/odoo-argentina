@@ -4,13 +4,48 @@
 ##############################################################################
 import copy
 
-from odoo import _, api, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.fields import Domain
 
 
 class AccountMove(models.Model):
     _inherit = "account.move"
+
+    # Solo para condicionar el aviso en la vista: si el contacto no tiene responsabilidad, no proponemos
+    # documentos y hay que ofrecer el link para ir a completarla.
+    l10n_ar_ux_partner_responsibility_id = fields.Many2one(
+        related="commercial_partner_id.l10n_ar_afip_responsibility_type_id",
+        string="ARCA Responsibility",
+    )
+
+    l10n_ar_ux_document_number_placeholder = fields.Char(
+        compute="_compute_l10n_ar_ux_document_number_placeholder",
+    )
+
+    @api.depends("l10n_latam_document_type_id")
+    def _compute_l10n_ar_ux_document_number_placeholder(self):
+        """El formato del número depende del tipo de documento: los despachos de importación son 16 caracteres
+        y el resto va punto de venta y número separados por guión (ver _format_document_number de l10n_ar)."""
+        for rec in self:
+            document_type = rec.l10n_latam_document_type_id
+            placeholder = False
+            if document_type.country_id.code == "AR" and document_type.code:
+                placeholder = "1234567890123456" if document_type.code in ["66", "67"] else "00001-00000001"
+            rec.l10n_ar_ux_document_number_placeholder = placeholder
+
+    def action_l10n_ar_ux_set_partner_responsibility(self):
+        """Abre un wizard para definir la responsabilidad del contacto sin salir de la factura: al aceptar se
+        guarda en el contacto, se refrescan los tipos de documento de esta factura y volvés al borrador."""
+        self.ensure_one()
+        return {
+            "type": "ir.actions.act_window",
+            "name": self.env._("Set the ARCA Responsibility"),
+            "res_model": "l10n_ar_ux.partner.responsibility",
+            "view_mode": "form",
+            "target": "new",
+            "context": {"default_move_id": self.id},
+        }
 
     @api.depends("reversed_entry_id")
     def _compute_invoice_currency_rate(self):
@@ -114,7 +149,7 @@ class AccountMove(models.Model):
         return super()._get_l10n_ar_codes_used_for_inv_and_ref() + ["33", "331"]
 
     # NOTE: the following three methods port odoo/odoo#234040 (merged in Odoo master, not in 19.0).
-    # They must be dropped when migrating to a version that already includes it.
+    # They must be dropped when migrating to a version that already includes it (see also odoo/odoo#212153).
 
     def _l10n_ar_is_refund_invoice(self):
         """Check if the document type is in the list of document types that can be used as an invoice and
@@ -143,50 +178,30 @@ class AccountMove(models.Model):
                             tax_group[field] *= -1
 
     def _l10n_ar_get_invoice_totals_for_report(self):
-        """If the invoice document type indicates that vat should not be detailed in the printed report (result of
-        _l10n_ar_include_vat()) then we overwrite tax_totals field so that includes taxes in the total amount,
-        otherwise it would be showing amount_untaxed in the amount_total.
-        Also, if the invoice is a refund and shares the same ARCA code as the invoice it is reversing, we apply
-        adjustments to the tax totals to reflect the amounts in negative.
+        """Show the totals in negative for refunds that share the ARCA document code with the invoice they
+        reverse (port of odoo/odoo#234040).
 
-        Full override of l10n_ar (no super call) mirroring odoo/odoo#234040. We deepcopy tax_totals so the
-        adjustments do not mutate the computed field cache."""
-        self.ensure_one()
-        tax_totals = copy.deepcopy(self.tax_totals)
+        The sign is applied once on the result of super(): `_exclude_tax_groups_from_tax_totals_summary` only
+        adds and subtracts amounts, so flipping the sign after it is equivalent to flipping it before, and the
+        core logic is kept untouched."""
+        tax_totals = super()._l10n_ar_get_invoice_totals_for_report()
         if self._l10n_ar_is_refund_invoice():
+            # super() may return the cached dict of the computed field: never mutate it in place
+            tax_totals = copy.deepcopy(tax_totals)
             self._apply_refund_adjustments(tax_totals)
-        include_vat = self._l10n_ar_include_vat()
-        if not include_vat:
-            return tax_totals
-
-        tax_group_ids = {
-            tax_group["id"] for subtotal in tax_totals["subtotals"] for tax_group in subtotal["tax_groups"]
-        }
-        tax_group_ids_to_exclude = (
-            self.env["account.tax.group"]
-            .browse(tax_group_ids)
-            .filtered(
-                lambda tax_group: (
-                    self._l10n_ar_is_tax_group_other_national_ind_tax(tax_group)
-                    or self._l10n_ar_is_tax_group_vat(tax_group)
-                    or (
-                        self._l10n_ar_is_transparency_document()
-                        and self._l10n_ar_is_tax_group_iibb_perception(tax_group)
-                    )
-                )
-            )
-            .ids
-        )
-        if tax_group_ids_to_exclude:
-            if self._l10n_ar_is_refund_invoice():
-                self._apply_refund_adjustments(tax_totals)
-            tax_totals = self.env["account.tax"]._exclude_tax_groups_from_tax_totals_summary(
-                tax_totals, tax_group_ids_to_exclude
-            )
         return tax_totals
 
     def _get_l10n_latam_documents_domain(self):
         self.ensure_one()
+        if (
+            self.journal_id.company_id.account_fiscal_country_id.code == "AR"
+            and self.l10n_latam_use_documents
+            and not self.commercial_partner_id.l10n_ar_afip_responsibility_type_id
+        ):
+            # Sin la responsabilidad ARCA no sabemos qué letras corresponden: el dominio de l10n_ar deja pasar
+            # solo los documentos sin letra (exterior y excepcionales) y se autoselecciona el primero. Preferimos
+            # no proponer nada antes que autoseleccionar un Despacho de importación.
+            return Domain.FALSE
         domain = super()._get_l10n_latam_documents_domain()
         if self.journal_id.company_id.account_fiscal_country_id.code == "AR" and self.move_type in [
             "out_refund",
