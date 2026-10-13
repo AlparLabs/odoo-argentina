@@ -14,6 +14,8 @@ en SQL plano para no depender de openupgradelib en el build.
 """
 import logging
 
+from odoo import SUPERUSER_ID, api
+
 _logger = logging.getLogger(__name__)
 
 # (módulo en 17, módulo que lo absorbe en 19)
@@ -96,6 +98,19 @@ def _merge_module(cr, old, new):
     # Se recrean cuando carga el módulo destino
     cr.execute("DELETE FROM ir_model_constraint WHERE module = %s", [old_id])
     cr.execute("DELETE FROM ir_model_relation WHERE module = %s", [old_id])
+
+    # Las vistas del módulo viejo no se mueven: el destino recrea las que
+    # sigue definiendo. Si se movieran, las que ya no define se validarían
+    # con campos que no existen al cargar el destino, y si el destino se
+    # instala no corre ninguna migración que las limpie.
+    cr.execute(
+        "SELECT res_id FROM ir_model_data WHERE module = %s AND model = 'ir.ui.view'",
+        [old],
+    )
+    view_ids = [row[0] for row in cr.fetchall()]
+    if view_ids:
+        env = api.Environment(cr, SUPERUSER_ID, {})
+        env["ir.ui.view"].browse(view_ids).exists().with_context(_force_unlink=True).unlink()
 
     # Mover los xmlids sin pisar los que el destino ya tiene
     cr.execute(
