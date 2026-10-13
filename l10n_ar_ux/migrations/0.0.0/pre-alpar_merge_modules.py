@@ -29,6 +29,21 @@ MERGES = [
 ACTIVE_STATES = ("installed", "to upgrade", "to remove")
 DETACHED_PREFIX = "[ALPAR-UPGRADE] "
 
+# Tablas de modelos que en 19 ya no existen. Odoo las borra al final del
+# update, pero antes borra registros que ya no están en el código (ej.
+# etiquetas contables) y sus FKs lo impiden: res_partner_arba_alicuot.tag_id
+# bloqueaba borrar la etiqueta de jurisdicción de Córdoba.
+ORPHAN_TABLES = [
+    "res_partner_arba_alicuot",
+    "afip_tabla_ganancias_escala",
+    "afip_tabla_ganancias_alicuotasymontos",
+    "account_tax_withholding_rule",
+    "afip_activity",
+    "account_move_change_rate",
+    "res_download_files_wizard",
+    "res_download_files_wizard_line",
+]
+
 
 def _get_module(cr, name):
     cr.execute(
@@ -165,9 +180,28 @@ def _merge_module(cr, old, new):
     )
 
 
+def _drop_orphan_foreign_keys(cr):
+    """Saca las FKs salientes de las tablas de modelos eliminados en 19, para
+    que no bloqueen la limpieza final. Las tablas las borra Odoo después."""
+    cr.execute(
+        """
+        SELECT c.conrelid::regclass::text, c.conname
+          FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+         WHERE c.contype = 'f'
+           AND t.relname IN %s
+        """,
+        [tuple(ORPHAN_TABLES)],
+    )
+    for table, constraint in cr.fetchall():
+        _logger.info("Sacando FK %s de %s (modelo eliminado en 19)", constraint, table)
+        cr.execute(f'ALTER TABLE {table} DROP CONSTRAINT "{constraint}"')
+
+
 def migrate(cr, version):
     if not version:
         return
+    _drop_orphan_foreign_keys(cr)
     _detach_custom_views(cr, [old for old, _new in MERGES])
     for old, new in MERGES:
         _merge_module(cr, old, new)
